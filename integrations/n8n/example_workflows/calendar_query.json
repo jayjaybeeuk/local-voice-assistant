@@ -1,0 +1,67 @@
+{
+  "name": "Calendar Query",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "calendar",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "calendar"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendarId": "primary",
+        "timeMin": "={{$json.body.start_date}}",
+        "timeMax": "={{$json.body.end_date}}",
+        "options": {
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "id": "gcal-1",
+      "name": "Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [470, 300],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "2",
+          "name": "Google Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const events = items.map(item => {\n  const start = item.json.start.dateTime || item.json.start.date;\n  return `- ${item.json.summary} at ${start}`;\n});\nconst summary = events.length > 0 ? events.join('\\n') : 'No events found.';\nreturn [{ json: { result: `Here's your schedule:\\n${summary}` } }];"
+      },
+      "id": "format-1",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [690, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Google Calendar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Calendar": {
+      "main": [
+        [{ "node": "Format Response", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

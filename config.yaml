@@ -22,3 +22,14 @@ vad:
   threshold: 0.5
   min_speech_duration_ms: 250
   min_silence_duration_ms: 300
+
+n8n:
+  base_url: "http://localhost:5678"
+  webhooks:
+    control_smart_home: /webhook/smart-home
+    query_calendar: /webhook/calendar
+    send_message: /webhook/send-message
+    add_to_list: /webhook/shopping-list
+    web_search: /webhook/web-search
+    set_reminder: /webhook/set-reminder
+  timeout: 10

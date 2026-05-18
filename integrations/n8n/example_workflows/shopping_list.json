@@ -1,0 +1,81 @@
+{
+  "name": "Shopping List",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "shopping-list",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "shopping-list"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "={{$json.body.database_id || 'your-notion-database-id'}}",
+        "properties": {
+          "Name": {
+            "title": [{ "text": { "content": "={{$json.body.item}}" } }]
+          },
+          "Category": {
+            "select": { "name": "={{$json.body.category || 'General'}}" }
+          },
+          "Quantity": {
+            "number": "={{$json.body.quantity || 1}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "notion-1",
+      "name": "Notion - Add Item",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "credentials": {
+        "notionApi": {
+          "id": "4",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "result",
+              "value": "=Added \"{{$json.body.item}}\" (x{{$json.body.quantity || 1}}) to your shopping list."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-1",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [690, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Notion - Add Item", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notion - Add Item": {
+      "main": [
+        [{ "node": "Format Response", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

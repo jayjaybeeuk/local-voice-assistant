@@ -13,6 +13,19 @@ A fully local, real-time duplex voice conversation system using Pipecat for pipe
 
 All components run locally — no cloud APIs required.
 
+### n8n Integration (Function Calling)
+
+The assistant supports tool use via [n8n](https://n8n.io/) webhooks. When the LLM decides an action is needed (e.g., "turn off the lights"), it triggers a function call that is routed to an n8n workflow via webhook. This enables:
+
+- 🏠 Smart home control (Home Assistant)
+- 📅 Calendar queries (Google Calendar)
+- 💬 Sending messages (Telegram/SMS)
+- 🛒 Shopping list management (Notion/Todoist)
+- 🔍 Web search
+- ⏰ Reminders
+
+See [`integrations/n8n/README.md`](integrations/n8n/README.md) for setup instructions and example workflows.
+
 | Component | Role | Backend |
 |-----------|------|---------|
 | Pipecat | Pipeline orchestration | Python framework by Daily.co |
