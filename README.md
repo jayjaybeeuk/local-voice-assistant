@@ -89,6 +89,20 @@ docker compose up
 
 This starts both Ollama with Qwen3-8B and the voice assistant app.
 
+## Web UI (Voice Chat)
+
+The Next.js web frontend (`web/`) supports browser-based voice chat. It captures mic audio, streams it via WebSocket to the backend for STT/LLM/TTS processing, and plays responses through the browser speakers.
+
+```bash
+# Start the WebSocket backend
+python app.py --ws
+
+# In another terminal, start the web UI
+cd web && npm run dev
+```
+
+Open http://localhost:3000 and tap the microphone button to start a voice conversation.
+
 ## License
 
 MIT
