@@ -11,3 +11,15 @@ export interface TranscriptMessage {
   text: string;
   timestamp: number;
 }
+
+export interface EndpointConfig {
+  endpointUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export const defaultEndpointConfig: EndpointConfig = {
+  endpointUrl: "http://localhost:11434/v1",
+  apiKey: "",
+  model: "qwen3:8b",
+};
