@@ -130,7 +130,15 @@ cp .env.example .env
 docker compose up
 ```
 
-This starts both Ollama with Qwen3-8B and the voice assistant app.
+This starts both Ollama and the voice assistant. Ollama runs in CPU mode by default.
+
+### With NVIDIA GPU
+
+If you have an NVIDIA GPU with drivers installed, use the GPU override to pass the device to Ollama:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+```
 
 ## Docker: Voice Assistant With External LLM Endpoint
 
