@@ -11,6 +11,9 @@ const BUFFER_SIZE = 4096;
 export function useVoiceChat() {
   const [state, setState] = useState<VoiceChatState>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
+  const [responseTime, setResponseTime] = useState<number | null>(null);
+  const lastAudioSentAt = useRef<number>(0);
+  const awaitingResponse = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -85,6 +88,8 @@ export function useVoiceChat() {
           }
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(pcm.buffer);
+            lastAudioSentAt.current = performance.now();
+            awaitingResponse.current = true;
           }
         };
         source.connect(processor);
@@ -93,6 +98,11 @@ export function useVoiceChat() {
 
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
+          if (awaitingResponse.current) {
+            const delta = Math.round(performance.now() - lastAudioSentAt.current);
+            setResponseTime(delta);
+            awaitingResponse.current = false;
+          }
           playbackQueue.current.push(event.data);
           if (!isPlaying.current) playNextChunk();
         }
@@ -142,5 +152,5 @@ export function useVoiceChat() {
     return () => { stop(); };
   }, [stop]);
 
-  return { state, audioLevel, start, stop };
+  return { state, audioLevel, responseTime, start, stop };
 }

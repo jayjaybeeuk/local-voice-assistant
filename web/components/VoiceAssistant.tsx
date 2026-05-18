@@ -6,7 +6,7 @@ import { TranscriptPanel } from "./TranscriptPanel";
 import { ConnectionStatus } from "./ConnectionStatus";
 
 export function VoiceAssistant() {
-  const { state, audioLevel, start, stop } = useVoiceChat();
+  const { state, audioLevel, responseTime, start, stop } = useVoiceChat();
 
   const isActive = state === "listening" || state === "speaking";
 
@@ -54,6 +54,13 @@ export function VoiceAssistant() {
         {state === "listening" && "Listening — speak now"}
         {state === "speaking" && "AI responding..."}
       </p>
+
+      {/* Response time indicator */}
+      {responseTime !== null && (
+        <div className="flex justify-center">
+          <span className="font-mono text-xs text-gray-600">⚡ {responseTime}ms</span>
+        </div>
+      )}
     </div>
   );
 }
