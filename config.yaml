@@ -23,6 +23,11 @@ vad:
   min_speech_duration_ms: 250
   min_silence_duration_ms: 300
 
+server:
+  # Set a non-empty string to require clients to authenticate with {"token": "<secret_key>"}
+  # Also set NEXT_PUBLIC_WS_TOKEN in the web UI to the same value.
+  secret_key: ""
+
 n8n:
   base_url: "http://localhost:5678"
   webhooks:

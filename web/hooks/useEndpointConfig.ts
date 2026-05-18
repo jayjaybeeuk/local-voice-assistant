@@ -19,17 +19,24 @@ export function useEndpointConfig() {
     setLoaded(true);
   }, []);
 
-  const save = useCallback(async (newConfig: EndpointConfig) => {
+  const save = useCallback(async (newConfig: EndpointConfig): Promise<{ ok: boolean; error?: string }> => {
     setConfig(newConfig);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
-    // Also persist to server for backend polling
     try {
-      await fetch("/api/config", {
+      const res = await fetch("/api/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newConfig),
       });
-    } catch {}
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: false, error: (data as { error?: string }).error || `Server error ${res.status}` };
+      }
+      return { ok: true };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to save settings";
+      return { ok: false, error: message };
+    }
   }, []);
 
   return { config, save, loaded };

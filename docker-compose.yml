@@ -14,21 +14,28 @@ services:
               count: all
               capabilities: [gpu]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
   voice-assistant:
     build: .
     container_name: voice-assistant
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     environment:
       - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ./config.yaml:/app/config.yaml
-      - ./models:/app/models
+      - models_cache:/app/models
     devices:
       - /dev/snd:/dev/snd
-    network_mode: host
     restart: unless-stopped
 
 volumes:
   ollama_data:
+  models_cache:

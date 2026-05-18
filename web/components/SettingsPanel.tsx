@@ -5,7 +5,7 @@ import { EndpointConfig } from "@/lib/config";
 
 interface Props {
   config: EndpointConfig;
-  onSave: (config: EndpointConfig) => void;
+  onSave: (config: EndpointConfig) => Promise<{ ok: boolean; error?: string }>;
   onClose: () => void;
 }
 
@@ -15,6 +15,8 @@ export function SettingsPanel({ config, onSave, onClose }: Props) {
   const [model, setModel] = useState(config.model);
   const [testStatus, setTestStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     setEndpointUrl(config.endpointUrl);
@@ -31,18 +33,29 @@ export function SettingsPanel({ config, onSave, onClose }: Props) {
       const res = await fetch(`${endpointUrl}/models`, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const models = data.data?.map((m: any) => m.id).slice(0, 5).join(", ") || "connected";
+      const models = data.data?.map((m: { id: string }) => m.id).slice(0, 5).join(", ") || "connected";
       setTestStatus("success");
       setTestMessage(`Models: ${models}`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setTestStatus("error");
-      setTestMessage(e.message || "Connection failed");
+      setTestMessage(e instanceof Error ? e.message : "Connection failed");
     }
   };
 
-  const handleSave = () => {
-    onSave({ endpointUrl, apiKey, model });
-    onClose();
+  const handleSave = async () => {
+    setSaveStatus("saving");
+    setSaveError("");
+    const result = await onSave({ endpointUrl, apiKey, model });
+    if (result.ok) {
+      setSaveStatus("saved");
+      setTimeout(() => {
+        setSaveStatus("idle");
+        onClose();
+      }, 800);
+    } else {
+      setSaveStatus("error");
+      setSaveError(result.error || "Failed to save");
+    }
   };
 
   return (
@@ -101,6 +114,13 @@ export function SettingsPanel({ config, onSave, onClose }: Props) {
           </div>
         )}
 
+        {/* Save error */}
+        {saveStatus === "error" && saveError && (
+          <div className="text-sm px-3 py-2 rounded-lg bg-red-500/10 text-red-400">
+            ✗ {saveError}
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={testConnection}
@@ -110,9 +130,10 @@ export function SettingsPanel({ config, onSave, onClose }: Props) {
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-2 bg-accent hover:bg-accent-dark text-white rounded-lg text-sm font-medium transition-all"
+            disabled={saveStatus === "saving"}
+            className="flex-1 px-4 py-2 bg-accent hover:bg-accent-dark text-white rounded-lg text-sm font-medium transition-all disabled:opacity-60"
           >
-            Save
+            {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved ✓" : "Save"}
           </button>
         </div>
       </div>

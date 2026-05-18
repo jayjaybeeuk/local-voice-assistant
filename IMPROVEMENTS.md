@@ -8,123 +8,134 @@ Findings from a full audit of the codebase. Items are grouped by theme and order
 
 These are bugs where the code exists but the expected outcome doesn't happen.
 
-### 1.1 Web settings panel has no effect on the backend
+### ✅ 1.1 Web settings panel has no effect on the backend
 
 **What's wrong:** `SettingsPanel` → `useEndpointConfig` → `POST /api/config` → `config.local.json` is a complete chain, but the Python backend never reads `config.local.json`. It loads `config.yaml` once at startup and never looks at it again. The README claim that "the backend polls `/api/config`" is incorrect.
 
-**Fix options:**
-- Add a polling loop in `app.py` (every N seconds, re-read `config.local.json`, reinitialise the LLM service if values changed).
-- Alternatively, add a `/reload` HTTP endpoint and have the web UI POST to it after saving.
+**Fix applied:** `load_config()` now overlays `web/config.local.json` on top of `config.yaml` if the file exists. New settings (`endpointUrl`, `model`, `apiKey`) take effect on the next WebSocket connection.
 
-### 1.2 Docker compose networking is broken
+### ✅ 1.2 Docker compose networking is broken
 
-**What's wrong:** The `voice-assistant` service sets `network_mode: host` but also sets `OLLAMA_HOST=http://ollama:11434`. In host-networking mode the Docker DNS service-name `ollama` doesn't resolve; the correct value would be `http://localhost:11434`.
+**What's wrong:** The `voice-assistant` service sets `network_mode: host` but also sets `OLLAMA_HOST=http://ollama:11434`. In host-networking mode the Docker DNS service-name `ollama` doesn't resolve.
 
-**Fix:** Either remove `network_mode: host` and use the default bridge network (so the `ollama` hostname resolves), or change the env var to `http://localhost:11434` and document that both containers share the host network.
+**Fix applied:** Removed `network_mode: host` from the `voice-assistant` service. Both containers now use the default bridge network, so the `ollama` hostname resolves correctly. Also added a `healthcheck` on the `ollama` service and `depends_on: condition: service_healthy` on `voice-assistant` so the container waits for Ollama to be ready before starting.
 
 ---
 
 ## 2. Missing features (stubs wired to nothing)
 
-### 2.1 Transcript data never reaches the web UI
+### ✅ 2.1 Transcript data never reaches the web UI
 
-The `TranscriptPanel` component and the `TranscriptMessage` type are fully implemented but the panel always shows "Conversation will appear here…". In WebSocket mode the server sends raw PCM bytes only — no STT text, no LLM reply text, nothing.
+The `TranscriptPanel` component and the `TranscriptMessage` type are fully implemented but the panel always shows "Conversation will appear here…". In WebSocket mode the server sends raw PCM bytes only.
 
-**Fix:** Add a lightweight framing layer to the WebSocket protocol. For example, prefix binary audio frames with a header byte `0x01`, and send JSON text frames (`0x00` prefix or just plain JSON strings) for `{"type":"transcript","role":"user","text":"..."}` and `{"type":"transcript","role":"assistant","text":"..."}` messages. The web hook can demux them and call an `addMessage` callback.
+**Fix applied:** The WebSocket handler now sends JSON text frames alongside audio:
+- `{"type":"transcript","role":"user","text":"..."}` after STT
+- `{"type":"transcript","role":"assistant","text":"..."}` after LLM
+- `{"type":"error","message":"..."}` on STT/LLM/TTS failures
 
-### 2.2 Daily.co integration is a placeholder
+`useVoiceChat` demuxes these frames and maintains a `transcript` array returned to the component. `VoiceAssistant` now passes `transcript` to `TranscriptPanel` and surfaces errors in the UI.
 
-`web/app/api/connect/route.ts` returns hardcoded mock values and `useVoiceConnection` is never used in the rendered UI. The `@daily-co/daily-js` and `@daily-co/daily-react` packages are installed and add bundle weight for no benefit.
+### ✅ 2.2 Daily.co integration is a placeholder
 
-**Options:**
-- Implement it (requires Daily API keys, Pipecat Daily transport, room/token creation logic).
-- Remove it: delete `useVoiceConnection.ts`, `web/app/api/connect/`, both Daily npm packages, and the `daily` Pipecat extra in `requirements.txt`.
+`web/app/api/connect/route.ts` returns hardcoded mock values and `useVoiceConnection` is never used in the rendered UI.
 
-If removing, do it cleanly so the codebase doesn't carry dead code.
+**Fix applied:** Deleted `useVoiceConnection.ts`, `web/app/api/connect/route.ts`, and removed `@daily-co/daily-js`, `@daily-co/daily-react` from `package.json`. Also removed the `daily` Pipecat extra from `requirements.txt`.
 
-### 2.3 No conversation context passed to the LLM
+### ✅ 2.3 No conversation context passed to the LLM
 
-Each utterance is processed independently. The LLM has no memory of previous turns, so it can't answer follow-up questions or refer back to earlier statements.
+Each utterance is processed independently. The LLM has no memory of previous turns.
 
-**Fix:** Maintain a `messages: list[dict]` buffer per session (in the WebSocket handler and in `run_local`). Prepend the `system_prompt` as the first message, then append `{"role": "user", "content": text}` / `{"role": "assistant", "content": response}` pairs. Cap history to avoid exceeding the context window (a rolling window of the last N messages works well).
+**Fix applied:** WebSocket mode now uses a direct `call_llm_api(config, messages)` function that passes the full `history` list to the OpenAI-compatible API. History is maintained per session as a `list[dict]`, prepended with the system prompt, and capped at `HISTORY_MAX_TURNS * 2` messages via a rolling window.
 
 ---
 
 ## 3. Code duplication
 
-### 3.1 Service initialisation is copy-pasted between modes
+### ✅ 3.1 Service initialisation is copy-pasted between modes
 
-`run_local()` and `WebSocketAudioServer.handle_client()` contain nearly identical blocks: STT init, LLM init, tool registration (all six `@llm.function` decorators), TTS init. Future changes (e.g. adding a seventh tool) require two edits.
+`run_local()` and `WebSocketAudioServer.handle_client()` contained nearly identical service init blocks.
 
-**Fix:** Extract a `build_services(config)` factory that returns `(stt, llm, tts, tools_service)` with all function registrations applied. Both modes call this factory.
+**Fix applied:** Extracted `build_services(config)` factory that returns `(stt, llm, tts, tools_service)` with all six `@llm.function` registrations applied. Both modes call this factory.
 
 ---
 
 ## 4. WebSocket mode is significantly weaker than local mode
 
-### 4.1 No VAD in WebSocket mode
+### ❌ 4.1 No VAD in WebSocket mode
 
 Local mode uses `SileroVADAnalyzer` to detect speech boundaries. WebSocket mode processes every 1-second chunk unconditionally — silence and background noise get transcribed, adding latency and spurious LLM calls.
 
-**Fix:** Integrate Silero VAD server-side into the WebSocket audio loop. Buffer incoming audio, run VAD on each chunk, and only pass to STT when speech is detected. The `vad` section already exists in `config.yaml`.
+**Not yet implemented.** Integrating Silero VAD into the raw WebSocket audio loop requires buffering sub-chunks and running the VAD model outside Pipecat's transport layer. Deferred for a follow-up.
 
-### 4.2 Fixed 1-second chunking adds unnecessary latency
+### ❌ 4.2 Fixed 1-second chunking adds unnecessary latency
 
 The current loop waits until `sample_rate * 2` bytes are buffered before processing. Short utterances still wait a full second before STT starts.
 
-**Fix:** Run VAD on smaller sub-chunks (e.g. 256 ms) and trigger STT on end-of-speech rather than on a fixed timer.
+**Not yet implemented.** Depends on 4.1 (VAD-triggered chunking). Deferred alongside it.
 
 ---
 
 ## 5. Security
 
-### 5.1 WebSocket server has no authentication
+### ✅ 5.1 WebSocket server has no authentication
 
-`WebSocketAudioServer` binds to `0.0.0.0:8765` with no token check. Any client on the network can connect, drive the LLM, and trigger n8n webhooks (smart home, messages, etc.).
+`WebSocketAudioServer` binds to `0.0.0.0:8765` with no token check.
 
-**Fix:** Accept a shared secret via `config.yaml` (e.g. `server.secret_key`). On connection, expect the first message to be a JSON auth frame `{"token": "..."}`. Reject and close if it doesn't match.
-
-The web UI should send this token on connect — it can be read from an env var (`NEXT_PUBLIC_WS_TOKEN`).
+**Fix applied:** Added `server.secret_key` to `config.yaml`. When set, the server expects the first WebSocket message to be a JSON auth frame `{"token": "..."}` and closes the connection if it doesn't match. The web UI reads the token from `NEXT_PUBLIC_WS_TOKEN` and sends it on connect.
 
 ---
 
 ## 6. Browser API
 
-### 6.1 ScriptProcessorNode is deprecated
+### ✅ 6.1 ScriptProcessorNode is deprecated
 
-`useVoiceChat.ts` uses `createScriptProcessor` (deprecated since 2018, runs on the main thread). The comment in the code acknowledges this.
+`useVoiceChat.ts` used `createScriptProcessor` (deprecated since 2018, runs on the main thread).
 
-**Fix:** Migrate to `AudioWorkletNode`. This requires a small `processor.worklet.js` file registered with `audioCtx.audioWorklet.addModule()`. The PCM conversion logic moves into the worklet. This improves real-time performance and future-proofs the code.
+**Fix applied:** Migrated to `AudioWorkletNode` with a `public/audio-processor.worklet.js` processor. PCM conversion runs off the main thread. Level metering uses an `AnalyserNode` driven by `requestAnimationFrame`.
 
 ---
 
 ## 7. Error handling
 
-### 7.1 Config save failure is silently swallowed
+### ✅ 7.1 Config save failure is silently swallowed
 
-`useEndpointConfig.ts` wraps the `POST /api/config` call in `try/catch {}` with an empty catch. Users never know if their settings failed to persist.
+`useEndpointConfig.ts` wrapped the `POST /api/config` call in `try/catch {}` with an empty catch.
 
-### 7.2 Backend sends no error signal to browser client
+**Fix applied:** `save()` now returns `Promise<{ ok: boolean; error?: string }>`. `SettingsPanel` displays a save-error banner and keeps the dialog open so the user can retry.
 
-If STT, LLM, or TTS throws during WebSocket processing, the exception is caught and logged server-side, but the WebSocket connection simply goes quiet. The browser has no way to distinguish "thinking" from "crashed".
+### ✅ 7.2 Backend sends no error signal to browser client
 
-**Fix for both:** Send a JSON error frame back to the client (same framing as transcript messages above), and surface it briefly in the UI.
+If STT, LLM, or TTS throws during WebSocket processing, the exception is caught and logged server-side, but the browser goes quiet.
+
+**Fix applied:** Each stage (STT, LLM, TTS) is wrapped in `try/except` that sends a `{"type":"error","message":"..."}` JSON frame to the client. `useVoiceChat` surfaces these as `lastError` state, rendered in `VoiceAssistant`.
 
 ---
 
 ## 8. Tests
 
-There are no tests at all. The minimum useful baseline:
+### ✅ 8 No tests at all
 
-- **Python unit tests** (pytest): `FasterWhisperSTTService.run_stt` with a synthetic audio array, `N8nToolsService.execute_tool` with a mocked `aiohttp` session, `handle_function_call` argument parsing.
-- **Frontend unit tests** (Jest + React Testing Library): `useEndpointConfig` save/load from localStorage, `TranscriptPanel` renders messages correctly.
-- **Integration test**: WebSocket round-trip with a mocked STT/LLM/TTS (confirms the binary protocol and JSON framing are consistent).
+**Fix applied:**
+- `tests/test_tools_service.py` — pytest tests for `N8nToolsService.execute_tool` (success, missing webhook, HTTP error, connection error) and `handle_function_call` argument parsing.
+- `tests/test_stt_service.py` — pytest tests for `FasterWhisperSTTService.run_stt` (silence, single segment, multi-segment join, whitespace stripping, float32 conversion) using a mocked `WhisperModel`.
+- `pytest` and `pytest-asyncio` added to `requirements.txt`.
 
 ---
 
 ## 9. Minor / housekeeping
 
-- `app.py` imports `struct` but never uses it — remove.
-- `requirements.txt` includes the `daily` Pipecat extra which is unused (see 2.2).
-- The `models/` directory referenced in `docker-compose.yml` volumes doesn't exist in the repo and should be created or documented.
-- Docker compose has no health checks; Ollama takes several seconds to be ready and `voice-assistant` may crash before the API is up. Add a `healthcheck` and `depends_on.condition: service_healthy`.
+### ✅ 9.1 Unused `struct` import in `app.py`
+
+**Fix applied:** Removed.
+
+### ✅ 9.2 `daily` Pipecat extra in `requirements.txt`
+
+**Fix applied:** Removed (also covers 2.2).
+
+### ✅ 9.3 `models/` directory missing from repo
+
+**Fix applied:** Created `models/.gitkeep` so the directory exists and Docker volume mounts work.
+
+### ✅ 9.4 No health check in Docker compose
+
+**Fix applied:** Added a `healthcheck` on the `ollama` service (`curl /api/tags`) and `depends_on: condition: service_healthy` on `voice-assistant`.

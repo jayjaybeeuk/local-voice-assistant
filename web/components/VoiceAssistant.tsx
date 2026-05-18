@@ -6,7 +6,7 @@ import { TranscriptPanel } from "./TranscriptPanel";
 import { ConnectionStatus } from "./ConnectionStatus";
 
 export function VoiceAssistant() {
-  const { state, audioLevel, responseTime, start, stop } = useVoiceChat();
+  const { state, audioLevel, responseTime, transcript, lastError, start, stop } = useVoiceChat();
 
   const isActive = state === "listening" || state === "speaking";
 
@@ -41,7 +41,6 @@ export function VoiceAssistant() {
               : "bg-surface-light hover:bg-indigo-500/20 ring-0 hover:ring-4 hover:ring-indigo-500/30"
           }`}
         >
-          {/* Pulse ring when active */}
           {isActive && (
             <span className="absolute inset-0 rounded-full animate-ping bg-red-500/20" />
           )}
@@ -55,12 +54,22 @@ export function VoiceAssistant() {
         {state === "speaking" && "AI responding..."}
       </p>
 
+      {/* Error display */}
+      {lastError && (
+        <div className="text-center text-sm text-red-400 bg-red-500/10 rounded-lg px-4 py-2">
+          {lastError}
+        </div>
+      )}
+
       {/* Response time indicator */}
       {responseTime !== null && (
         <div className="flex justify-center">
           <span className="font-mono text-xs text-gray-600">⚡ {responseTime}ms</span>
         </div>
       )}
+
+      {/* Transcript */}
+      <TranscriptPanel messages={transcript} />
     </div>
   );
 }
