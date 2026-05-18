@@ -8,6 +8,7 @@ Audio Input → VAD → faster-whisper STT → Qwen3-8B LLM (with tools) → Kok
 import asyncio
 import json
 import logging
+import os
 import sys
 import yaml
 import numpy as np
@@ -57,6 +58,11 @@ def load_config():
                 config["llm"]["api_key"] = local["apiKey"]
         except Exception as exc:
             logger.warning("Could not load config.local.json: %s", exc)
+
+    # Allow container/runtime override for n8n webhook routing.
+    n8n_base_url = os.getenv("N8N_BASE_URL")
+    if n8n_base_url:
+        config.setdefault("n8n", {})["base_url"] = n8n_base_url
 
     return config
 

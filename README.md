@@ -73,6 +73,47 @@ docker compose up -d ollama
 python app.py
 ```
 
+## Run Voice Assistant With External OpenAI-Compatible API (No Ollama)
+
+If you want to run only the voice assistant and use an external OpenAI-compatible API
+(for example OpenAI, OpenRouter, Together, or a remote vLLM server), you do not need
+to run the `ollama` Docker service.
+
+### 1. Install dependencies
+
+```bash
+pip install -r requirements.txt
+python scripts/download_models.py
+```
+
+### 2. Update `config.yaml`
+
+Set your LLM endpoint and model:
+
+```yaml
+llm:
+  base_url: "https://api.openai.com/v1"   # or your OpenAI-compatible endpoint
+  model: "gpt-4o-mini"                    # or provider-specific model name
+```
+
+Set your API key in the environment before starting:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+```
+
+### 3. Start only the assistant
+
+```bash
+python app.py
+```
+
+For WebSocket mode (with the web UI):
+
+```bash
+python app.py --ws
+```
+
 ## Configuration
 
 Edit `config.yaml` to customize:
@@ -88,6 +129,32 @@ docker compose up
 ```
 
 This starts both Ollama with Qwen3-8B and the voice assistant app.
+
+## n8n Integration Notes
+
+Tool calls are sent to n8n via HTTP webhooks defined in `config.yaml`:
+
+- Base URL: `n8n.base_url` (default `http://localhost:5678`)
+- Per-tool paths: `n8n.webhooks.*`
+
+An optional `n8n` service is included in `docker-compose.yml` under the `tools` profile.
+
+Start it with:
+
+```bash
+docker compose --profile tools up -d n8n
+```
+
+When `voice-assistant` runs in Docker Compose, it uses `N8N_BASE_URL=http://n8n:5678`
+so tool calls resolve automatically on the Compose network.
+
+You can still use an external n8n instance by changing `n8n.base_url` in `config.yaml`
+or overriding `N8N_BASE_URL`.
+
+If you do not need tools:
+
+1. Leave n8n stopped.
+2. Voice chat still works; only tool calls return an error response.
 
 ## Web UI
 
