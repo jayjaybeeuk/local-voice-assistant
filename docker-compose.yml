@@ -27,11 +27,11 @@ services:
       - LLM_MODEL=${LLM_MODEL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - N8N_BASE_URL=${N8N_BASE_URL:-http://n8n:5678}
+    ports:
+      - "8765:8765"
     volumes:
       - ./config.yaml:/app/config.yaml
       - models_cache:/app/models
-    devices:
-      - /dev/snd:/dev/snd
     restart: unless-stopped
 
   n8n:

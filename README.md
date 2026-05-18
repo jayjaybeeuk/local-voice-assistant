@@ -130,15 +130,26 @@ cp .env.example .env
 docker compose up
 ```
 
-This starts both Ollama and the voice assistant. Ollama runs in CPU mode by default.
+This starts Ollama and the voice assistant in **WebSocket mode** (port 8765).
+Open the web UI at http://localhost:3000 to interact via the browser.
 
 ### With NVIDIA GPU
 
-If you have an NVIDIA GPU with drivers installed, use the GPU override to pass the device to Ollama:
+If you have an NVIDIA GPU with drivers installed, use the GPU override:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 ```
+
+### Linux: Local microphone/speaker mode
+
+On Linux you can pass the host audio device into the container instead:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.linux-audio.yml up
+```
+
+This overrides the command to `python app.py` (local audio mode) and mounts `/dev/snd`.
 
 ## Docker: Voice Assistant With External LLM Endpoint
 

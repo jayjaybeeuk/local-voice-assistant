@@ -1,0 +1,9 @@
+# Linux local-audio override — passes the host sound device into the container.
+# Use this on Linux only if you want the assistant to use the host microphone/speaker
+# directly instead of the WebSocket/web UI mode:
+#   docker compose -f docker-compose.yml -f docker-compose.linux-audio.yml up
+services:
+  voice-assistant:
+    command: ["python", "app.py"]
+    devices:
+      - /dev/snd:/dev/snd
