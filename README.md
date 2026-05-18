@@ -89,19 +89,40 @@ docker compose up
 
 This starts both Ollama with Qwen3-8B and the voice assistant app.
 
-## Web UI (Voice Chat)
+## Web UI
 
-The Next.js web frontend (`web/`) supports browser-based voice chat. It captures mic audio, streams it via WebSocket to the backend for STT/LLM/TTS processing, and plays responses through the browser speakers.
+The Next.js frontend (`web/`) provides a full browser-based voice chat interface.
+
+### Features
+
+- **Start/Stop voice chat** — large mic button to toggle; red pulse when active
+- **Real-time audio visualiser** — live mic levels with glow effects (green = you, indigo = AI)
+- **Live transcript panel** — chat-bubble style conversation history
+- **Configurable LLM endpoint** — settings panel (gear icon) lets you point at any OpenAI-compatible API (local Ollama, OpenAI, etc.), with a **Test Connection** button to verify
+- **Response latency display** — discreet ⚡ ms figure showing end-to-end response time
+- **Persistent settings** — endpoint config saved to localStorage, survives refreshes
+- **Dark theme** — Inter font, indigo accents, minimal design
+
+### Running
 
 ```bash
-# Start the WebSocket backend
+# Terminal 1: Start the WebSocket backend
 python app.py --ws
 
-# In another terminal, start the web UI
-cd web && npm run dev
+# Terminal 2: Start the web UI
+cd web && npm install && npm run dev
 ```
 
 Open http://localhost:3000 and tap the microphone button to start a voice conversation.
+
+### Endpoint Configuration
+
+Click the ⚙️ gear icon to configure:
+- **Endpoint URL** — e.g. `http://localhost:11434/v1` (Ollama) or `https://api.openai.com/v1`
+- **API Key** — optional, for remote providers
+- **Model** — e.g. `qwen3:8b`, `gpt-4o`, etc.
+
+Hit **Test Connection** to verify the endpoint responds, then **Save**. The backend polls `/api/config` to pick up changes.
 
 ## License
 
