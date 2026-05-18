@@ -27,9 +27,13 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+        required: false
     environment:
-      - OLLAMA_HOST=http://ollama:11434
-      - N8N_BASE_URL=http://n8n:5678
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - N8N_BASE_URL=${N8N_BASE_URL:-http://n8n:5678}
     volumes:
       - ./config.yaml:/app/config.yaml
       - models_cache:/app/models

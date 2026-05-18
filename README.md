@@ -26,12 +26,12 @@ The assistant supports tool use via [n8n](https://n8n.io/) webhooks. When the LL
 
 See [`integrations/n8n/README.md`](integrations/n8n/README.md) for setup instructions and example workflows.
 
-| Component | Role | Backend |
-|-----------|------|---------|
-| Pipecat | Pipeline orchestration | Python framework by Daily.co |
-| faster-whisper | Speech-to-Text | CTranslate2 Whisper |
-| Qwen3-8B | LLM (conversation) | Ollama (OpenAI-compatible API) |
-| Kokoro | Text-to-Speech | Local neural TTS |
+| Component      | Role                   | Backend                        |
+| -------------- | ---------------------- | ------------------------------ |
+| Pipecat        | Pipeline orchestration | Python framework by Daily.co   |
+| faster-whisper | Speech-to-Text         | CTranslate2 Whisper            |
+| Qwen3-8B       | LLM (conversation)     | Ollama (OpenAI-compatible API) |
+| Kokoro         | Text-to-Speech         | Local neural TTS               |
 
 ## Requirements
 
@@ -92,8 +92,8 @@ Set your LLM endpoint and model:
 
 ```yaml
 llm:
-  base_url: "https://api.openai.com/v1"   # or your OpenAI-compatible endpoint
-  model: "gpt-4o-mini"                    # or provider-specific model name
+  base_url: "https://api.openai.com/v1" # or your OpenAI-compatible endpoint
+  model: "gpt-4o-mini" # or provider-specific model name
 ```
 
 Set your API key in the environment before starting:
@@ -117,6 +117,7 @@ python app.py --ws
 ## Configuration
 
 Edit `config.yaml` to customize:
+
 - LLM endpoint and model
 - STT model size
 - TTS voice and speed
@@ -125,10 +126,53 @@ Edit `config.yaml` to customize:
 ## Docker (Full Stack)
 
 ```bash
+cp .env.example .env
 docker compose up
 ```
 
 This starts both Ollama with Qwen3-8B and the voice assistant app.
+
+## Docker: Voice Assistant With External LLM Endpoint
+
+Use the same `voice-assistant` service for both internal and external LLM modes.
+
+### 1. Create your `.env`
+
+```bash
+cp .env.example .env
+```
+
+### 2. Choose one mode in `.env`
+
+1. Internal Ollama mode:
+   Set `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY` to empty values in `.env`.
+2. External API mode:
+   Fill `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY` with your provider values.
+
+Example external values:
+
+```bash
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=your_api_key_here
+```
+
+### 3. Run with Docker Compose
+
+```bash
+docker compose up --no-deps voice-assistant
+```
+
+Notes:
+
+1. `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY` override `config.yaml` at runtime.
+2. If external values are set, the assistant uses your external endpoint.
+3. If external values are empty, the assistant uses the local `config.yaml` LLM settings.
+4. If you also want tools in Docker, start n8n with:
+
+```bash
+docker compose --profile tools up -d n8n
+```
 
 ## n8n Integration Notes
 
@@ -185,6 +229,7 @@ Open http://localhost:3000 and tap the microphone button to start a voice conver
 ### Endpoint Configuration
 
 Click the ⚙️ gear icon to configure:
+
 - **Endpoint URL** — e.g. `http://localhost:11434/v1` (Ollama) or `https://api.openai.com/v1`
 - **API Key** — optional, for remote providers
 - **Model** — e.g. `qwen3:8b`, `gpt-4o`, etc.

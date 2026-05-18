@@ -64,6 +64,19 @@ def load_config():
     if n8n_base_url:
         config.setdefault("n8n", {})["base_url"] = n8n_base_url
 
+    # Allow container/runtime overrides for the LLM provider.
+    llm_base_url = os.getenv("LLM_BASE_URL")
+    if llm_base_url:
+        config.setdefault("llm", {})["base_url"] = llm_base_url
+
+    llm_model = os.getenv("LLM_MODEL")
+    if llm_model:
+        config.setdefault("llm", {})["model"] = llm_model
+
+    llm_api_key = os.getenv("LLM_API_KEY")
+    if llm_api_key:
+        config.setdefault("llm", {})["api_key"] = llm_api_key
+
     return config
 
 
