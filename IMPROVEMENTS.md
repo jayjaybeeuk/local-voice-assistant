@@ -61,17 +61,33 @@ Each utterance is processed independently. The LLM has no memory of previous tur
 
 ## 4. WebSocket mode is significantly weaker than local mode
 
-### ❌ 4.1 No VAD in WebSocket mode
+### 🔜 4.1 No VAD in WebSocket mode
 
-Local mode uses `SileroVADAnalyzer` to detect speech boundaries. WebSocket mode processes every 1-second chunk unconditionally — silence and background noise get transcribed, adding latency and spurious LLM calls.
+Local mode uses `SileroVADAnalyzer` to detect speech boundaries. WebSocket mode processes every 1-second chunk unconditionally — silence and background noise get transcribed, wasting CPU and producing garbage output (e.g. "[music]", random words from background noise). Every second of idle audio triggers a full STT → LLM → TTS round-trip.
 
-**Not yet implemented.** Integrating Silero VAD into the raw WebSocket audio loop requires buffering sub-chunks and running the VAD model outside Pipecat's transport layer. Deferred for a follow-up.
+**To do:**
 
-### ❌ 4.2 Fixed 1-second chunking adds unnecessary latency
+In local mode, `SileroVADAnalyzer` is baked into `LocalAudioTransport` as part of the Pipecat pipeline. In WebSocket mode there is no Pipecat transport layer, so VAD must be wired in manually inside `handle_client()`.
 
-The current loop waits until `sample_rate * 2` bytes are buffered before processing. Short utterances still wait a full second before STT starts.
+Rough implementation plan:
 
-**Not yet implemented.** Depends on 4.1 (VAD-triggered chunking). Deferred alongside it.
+1. Add a `vad_buffer: bytearray` alongside `audio_buffer` in `handle_client()`.
+2. Process incoming audio in small sub-chunks (e.g. 256 ms = 4096 bytes at 16 kHz/16-bit). For each sub-chunk, run `SileroVADAnalyzer` (or call `silero_vad` directly via `torch.hub`) to get a speech probability score.
+3. Accumulate sub-chunks into `vad_buffer` while speech is detected (score > `config["vad"]["threshold"]`).
+4. On a transition from speech → silence (sustained silence of at least `min_silence_duration_ms`), flush `vad_buffer` as a single audio chunk to STT and clear the buffer.
+5. Discard sub-chunks where no speech is detected (score stays below threshold).
+
+The `silero-vad` package is already an indirect dependency via `pipecat-ai[silero]`. The VAD config keys (`threshold`, `min_speech_duration_ms`, `min_silence_duration_ms`) are already in `config.yaml`.
+
+### 🔜 4.2 Fixed 1-second chunking adds unnecessary latency
+
+The current loop waits until `sample_rate * 2` bytes (1 full second of audio) are buffered before processing. A short utterance like "yes" or "okay" still waits up to a full second before STT even starts.
+
+**To do:**
+
+This is a direct consequence of 4.1. Once VAD drives chunking, the STT trigger moves from a fixed timer to end-of-speech detection, so a 200 ms utterance gets processed ~300 ms after the user stops speaking (silence threshold) rather than up to 1 second later.
+
+Implement 4.1 first; 4.2 falls out naturally from VAD-triggered flushing. The fixed `byte_chunk = sample_rate * 2` constant in `handle_client()` should be replaced with the smaller sub-chunk size (e.g. `SUB_CHUNK_MS = 256`) used for VAD scoring.
 
 ---
 
