@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import yaml
 import numpy as np
@@ -38,6 +39,9 @@ from services.tools_service import N8nToolsService, handle_function_call
 logger = logging.getLogger(__name__)
 
 HISTORY_MAX_TURNS = 20  # rolling window: keep last N user+assistant pairs
+
+# Split streamed LLM output into TTS-ready sentences at punctuation followed by whitespace.
+SENTENCE_BOUNDARY = re.compile(r'(?<=[.!?])\s+')
 
 
 def load_config():
@@ -126,29 +130,37 @@ def build_services(config):
     return stt, llm, tts, tools_service
 
 
-async def call_llm_api(config: dict, messages: list) -> str:
-    """Call the OpenAI-compatible LLM API with a full message history."""
+async def stream_llm_api(config: dict, messages: list):
+    """Yield text tokens from the LLM API using server-sent events streaming."""
     url = f"{config['llm']['base_url']}/chat/completions"
     api_key = config["llm"].get("api_key", "not-needed") or "not-needed"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     payload = {
         "model": config["llm"]["model"],
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 256,
+        "stream": True,
     }
-    logger.debug("LLM request → %s  model=%s", url, config["llm"]["model"])
+    logger.debug("LLM stream → %s  model=%s", url, config["llm"]["model"])
     timeout = aiohttp.ClientTimeout(total=60)
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                return data["choices"][0]["message"]["content"]
-            text = await resp.text()
-            raise RuntimeError(f"HTTP {resp.status} from {url}: {text[:400]}")
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"HTTP {resp.status} from {url}: {text[:400]}")
+            async for raw_line in resp.content:
+                line = raw_line.strip()
+                if not line or line == b"data: [DONE]":
+                    continue
+                if line.startswith(b"data: "):
+                    try:
+                        chunk = json.loads(line[6:])
+                        delta = chunk["choices"][0].get("delta", {}).get("content") or ""
+                        if delta:
+                            yield delta
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
 
 
 class WebSocketAudioServer:
@@ -215,6 +227,20 @@ class WebSocketAudioServer:
             except Exception:
                 pass
 
+        async def flush_tts(sentence: str):
+            """Synthesise one sentence and send audio immediately."""
+            sentence = sentence.strip()
+            if not sentence:
+                return
+            try:
+                audio_data = await tts.run_tts(sentence)
+            except Exception as exc:
+                logger.error("TTS error: %s", exc)
+                await send_json({"type": "error", "message": f"TTS failed: {exc}"})
+                return
+            if audio_data:
+                await websocket.send(audio_data)
+
         async def process_utterance(utterance_bytes: bytes):
             try:
                 text = await stt.run_stt(utterance_bytes)
@@ -230,31 +256,39 @@ class WebSocketAudioServer:
             await send_json({"type": "transcript", "role": "user", "text": text.strip()})
             history.append({"role": "user", "content": text.strip()})
 
+            full_response = ""
+            sentence_buffer = ""
+
             try:
-                response = await call_llm_api(config, history)
+                async for token in stream_llm_api(config, history):
+                    full_response += token
+                    sentence_buffer += token
+                    # Flush a complete sentence as soon as punctuation + whitespace arrives
+                    parts = SENTENCE_BOUNDARY.split(sentence_buffer, maxsplit=1)
+                    if len(parts) > 1:
+                        await flush_tts(parts[0])
+                        sentence_buffer = parts[1]
+
+                # Flush any trailing text that didn't end with punctuation
+                await flush_tts(sentence_buffer)
+
             except Exception as exc:
                 logger.error("LLM error [%s]: %s", type(exc).__name__, exc)
                 await send_json({"type": "error", "message": f"LLM failed: {type(exc).__name__}: {exc}"})
                 history.pop()
                 return
 
-            logger.info("LLM: %s", response)
-            history.append({"role": "assistant", "content": response})
+            if not full_response:
+                history.pop()
+                return
+
+            logger.info("LLM: %s", full_response)
+            history.append({"role": "assistant", "content": full_response})
 
             if len(history) > 1 + HISTORY_MAX_TURNS * 2:
                 history[1:] = history[1 - HISTORY_MAX_TURNS * 2 :]
 
-            await send_json({"type": "transcript", "role": "assistant", "text": response})
-
-            try:
-                audio_data = await tts.run_tts(response)
-            except Exception as exc:
-                logger.error("TTS error: %s", exc)
-                await send_json({"type": "error", "message": f"TTS failed: {exc}"})
-                return
-
-            if audio_data:
-                await websocket.send(audio_data)
+            await send_json({"type": "transcript", "role": "assistant", "text": full_response})
 
         try:
             async for message in websocket:
