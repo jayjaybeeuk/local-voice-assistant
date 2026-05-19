@@ -69,6 +69,20 @@ def load_config():
     if n8n_base_url:
         config.setdefault("n8n", {})["base_url"] = n8n_base_url
 
+    # Load persona.md as system prompt if present (overrides config.yaml system_prompt)
+    persona_path = Path(__file__).parent / "persona.md"
+    if persona_path.exists():
+        persona = persona_path.read_text().strip()
+        if persona:
+            config["llm"]["system_prompt"] = persona
+
+    # Append memory.md to system prompt if it has non-comment content
+    memory_path = Path(__file__).parent / "memory.md"
+    if memory_path.exists():
+        memory = memory_path.read_text().strip()
+        if memory:
+            config["llm"]["system_prompt"] += f"\n\n{memory}"
+
     # Allow container/runtime overrides for the LLM provider.
     llm_base_url = os.getenv("LLM_BASE_URL")
     if llm_base_url:
@@ -254,6 +268,21 @@ class WebSocketAudioServer:
 
             logger.info("STT: %s", text)
             await send_json({"type": "transcript", "role": "user", "text": text.strip()})
+
+            # "Remember that …" — append fact to memory.md without hitting the LLM
+            MEMORY_PREFIXES = ("remember that ", "remember ", "make a note that ", "note that ")
+            lower = text.strip().lower()
+            for prefix in MEMORY_PREFIXES:
+                if lower.startswith(prefix):
+                    fact = text.strip()[len(prefix):].strip().rstrip(".")
+                    memory_path = Path(__file__).parent / "memory.md"
+                    with open(memory_path, "a") as mf:
+                        mf.write(f"\n- {fact}")
+                    ack = f"Got it, I'll remember that {fact}."
+                    await send_json({"type": "transcript", "role": "assistant", "text": ack})
+                    await flush_tts(ack)
+                    return
+
             history.append({"role": "user", "content": text.strip()})
 
             full_response = ""

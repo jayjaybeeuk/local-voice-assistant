@@ -33,6 +33,8 @@ services:
       - "8765:8765"
     volumes:
       - ./config.yaml:/app/config.yaml
+      - ./persona.md:/app/persona.md
+      - ./memory.md:/app/memory.md
       - models_cache:/app/models
     restart: unless-stopped
 
