@@ -9,8 +9,20 @@ stt:
   compute_type: "int8"
 
 tts:
-  voice: "af_heart"
-  speed: 1.0
+  # Available voices:
+  #   af_sky      - higher-pitched American female
+  #   af_heart    - warm mid-range American female
+  #   af_bella    - energetic American female
+  #   af_sarah    - American female
+  #   bf_emma     - British female
+  #   bf_isabella - British female
+  #   am_adam     - American male
+  #   am_michael  - American male
+  #   bm_george   - British male
+  #   bm_lewis    - British male
+  voice: "af_sky"
+  speed: 1.2            # 1.0 = normal, 1.2 = 20% faster
+  pitch_semitones: 0    # semitones up (+) or down (-); 0 = no shift
   sample_rate: 24000
 
 audio:

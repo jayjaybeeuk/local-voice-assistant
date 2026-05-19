@@ -7,7 +7,9 @@ export type VoiceChatState = "idle" | "connecting" | "listening" | "speaking";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8765";
 const WS_TOKEN = process.env.NEXT_PUBLIC_WS_TOKEN || "";
-const SAMPLE_RATE = 16000;
+const INPUT_SAMPLE_RATE = 16000;  // mic capture & STT
+const TTS_SAMPLE_RATE = 24000;    // Kokoro output — must match config.yaml tts.sample_rate
+const SAMPLE_RATE = INPUT_SAMPLE_RATE;
 
 const WORKLET_CODE = `
 class AudioProcessor extends AudioWorkletProcessor {
@@ -71,7 +73,7 @@ export function useVoiceChat() {
       float32[i] = int16[i] / 32768;
     }
 
-    const buffer = ctx.createBuffer(1, float32.length, SAMPLE_RATE);
+    const buffer = ctx.createBuffer(1, float32.length, TTS_SAMPLE_RATE);
     buffer.copyToChannel(float32, 0);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -92,7 +94,7 @@ export function useVoiceChat() {
 
       const audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
       audioCtxRef.current = audioCtx;
-      playbackCtxRef.current = new AudioContext({ sampleRate: SAMPLE_RATE });
+      playbackCtxRef.current = new AudioContext({ sampleRate: TTS_SAMPLE_RATE });
 
       const workletBlob = new Blob([WORKLET_CODE], { type: "application/javascript" });
       const workletUrl = URL.createObjectURL(workletBlob);

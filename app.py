@@ -92,6 +92,7 @@ def build_stt_tts(config):
         voice=config["tts"]["voice"],
         speed=config["tts"]["speed"],
         sample_rate=config["tts"]["sample_rate"],
+        pitch_semitones=config["tts"].get("pitch_semitones", 0),
     )
     return stt, tts
 
