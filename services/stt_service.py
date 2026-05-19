@@ -3,7 +3,7 @@
 import numpy as np
 from faster_whisper import WhisperModel
 
-from pipecat.services.ai_services import STTService
+from pipecat.services.stt_service import STTService
 from pipecat.frames.frames import TranscriptionFrame, AudioRawFrame
 
 
@@ -16,6 +16,7 @@ class FasterWhisperSTTService(STTService):
         self._device = device if device != "auto" else "cuda"
         self._compute_type = compute_type
         self._model = None
+        self._ensure_model()
 
     def _ensure_model(self):
         if self._model is None:

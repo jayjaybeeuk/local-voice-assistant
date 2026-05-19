@@ -9,6 +9,25 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8765";
 const WS_TOKEN = process.env.NEXT_PUBLIC_WS_TOKEN || "";
 const SAMPLE_RATE = 16000;
 
+const WORKLET_CODE = `
+class AudioProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      const channelData = input[0];
+      const pcm = new Int16Array(channelData.length);
+      for (let i = 0; i < channelData.length; i++) {
+        const s = Math.max(-1, Math.min(1, channelData[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      this.port.postMessage(pcm.buffer, [pcm.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor("audio-processor", AudioProcessor);
+`;
+
 export function useVoiceChat() {
   const [state, setState] = useState<VoiceChatState>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
@@ -75,7 +94,10 @@ export function useVoiceChat() {
       audioCtxRef.current = audioCtx;
       playbackCtxRef.current = new AudioContext({ sampleRate: SAMPLE_RATE });
 
-      await audioCtx.audioWorklet.addModule("/audio-processor.worklet.js");
+      const workletBlob = new Blob([WORKLET_CODE], { type: "application/javascript" });
+      const workletUrl = URL.createObjectURL(workletBlob);
+      await audioCtx.audioWorklet.addModule(workletUrl);
+      URL.revokeObjectURL(workletUrl);
 
       const source = audioCtx.createMediaStreamSource(stream);
       const workletNode = new AudioWorkletNode(audioCtx, "audio-processor");

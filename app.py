@@ -23,12 +23,11 @@ from pipecat.pipeline.task import PipelineTask
 from pipecat.frames.frames import (
     AudioRawFrame,
     TextFrame,
-    LLMMessagesFrame,
     EndFrame,
 )
-from pipecat.services.openai import OpenAILLMService
+from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.local.audio import LocalAudioTransport
-from pipecat.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.silero import SileroVADAnalyzer
 
 from services.stt_service import FasterWhisperSTTService
 from services.tts_service import KokoroTTSService
@@ -80,8 +79,23 @@ def load_config():
     return config
 
 
+def build_stt_tts(config):
+    """Create only STT and TTS — used by the WebSocket path."""
+    stt = FasterWhisperSTTService(
+        model_size=config["stt"]["model_size"],
+        device=config["stt"]["device"],
+        compute_type=config["stt"]["compute_type"],
+    )
+    tts = KokoroTTSService(
+        voice=config["tts"]["voice"],
+        speed=config["tts"]["speed"],
+        sample_rate=config["tts"]["sample_rate"],
+    )
+    return stt, tts
+
+
 def build_services(config):
-    """Create STT, LLM (with tool registrations), TTS, and tools services."""
+    """Create STT, LLM (with tool registrations), TTS, and tools services — used by local mode."""
     tools_service = N8nToolsService(config.get("n8n", {}))
 
     stt = FasterWhisperSTTService(
@@ -93,21 +107,12 @@ def build_services(config):
     llm = OpenAILLMService(
         api_key=config["llm"].get("api_key", "not-needed") or "not-needed",
         base_url=config["llm"]["base_url"],
-        model=config["llm"]["model"],
-        params={"temperature": 0.7, "max_tokens": 256},
+        settings=OpenAILLMService.Settings(
+            model=config["llm"]["model"],
+            temperature=0.7,
+            max_tokens=256,
+        ),
     )
-    llm.system_prompt = config["llm"]["system_prompt"]
-    llm.tools = tools_service.get_tool_definitions()
-
-    @llm.function("control_smart_home")
-    @llm.function("query_calendar")
-    @llm.function("send_message")
-    @llm.function("add_to_list")
-    @llm.function("web_search")
-    @llm.function("set_reminder")
-    async def on_function_call(function_name, tool_call_id, arguments, llm_instance, context, result_callback):
-        result = await tools_service.execute_tool(function_name, arguments)
-        await result_callback(result)
 
     tts = KokoroTTSService(
         voice=config["tts"]["voice"],
@@ -132,14 +137,15 @@ async def call_llm_api(config: dict, messages: list) -> str:
         "temperature": 0.7,
         "max_tokens": 256,
     }
-    timeout = aiohttp.ClientTimeout(total=30)
+    logger.debug("LLM request → %s  model=%s", url, config["llm"]["model"])
+    timeout = aiohttp.ClientTimeout(total=60)
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 return data["choices"][0]["message"]["content"]
             text = await resp.text()
-            raise RuntimeError(f"LLM API returned {resp.status}: {text}")
+            raise RuntimeError(f"HTTP {resp.status} from {url}: {text[:400]}")
 
 
 class WebSocketAudioServer:
@@ -149,6 +155,9 @@ class WebSocketAudioServer:
         self.config = config
         self.host = host
         self.port = port
+        print("Loading STT and TTS models...", flush=True)
+        self.stt, self.tts = build_stt_tts(config)
+        print("Models ready.", flush=True)
 
     async def handle_client(self, websocket, path=None):
         logger.info("Web client connected")
@@ -172,7 +181,7 @@ class WebSocketAudioServer:
                 await websocket.close()
                 return
 
-        stt, _, tts, _ = build_services(config)
+        stt, tts = self.stt, self.tts
 
         # Per-session conversation history
         history: list = [{"role": "system", "content": config["llm"]["system_prompt"]}]
@@ -216,8 +225,8 @@ class WebSocketAudioServer:
                     try:
                         response = await call_llm_api(config, history)
                     except Exception as exc:
-                        logger.error("LLM error: %s", exc)
-                        await send_json({"type": "error", "message": f"LLM failed: {exc}"})
+                        logger.error("LLM error [%s]: %s", type(exc).__name__, exc)
+                        await send_json({"type": "error", "message": f"LLM failed: {type(exc).__name__}: {exc}"})
                         history.pop()
                         continue
 
@@ -295,7 +304,8 @@ async def main():
 
     if mode == "websocket":
         print("🌐 Starting WebSocket voice server on ws://0.0.0.0:8765")
-        print("   Connect via the web UI at http://localhost:3000")
+        print("   Connect via the web UI at http://localhost:3002 (Docker) or http://localhost:3000 (dev)")
+        print(f"   LLM: {config['llm']['base_url']}  model={config['llm']['model']}")
         server = WebSocketAudioServer(config, port=8765)
         await server.start()
     else:

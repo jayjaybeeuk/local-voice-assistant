@@ -4,7 +4,7 @@ import numpy as np
 import soundfile as sf
 import io
 
-from pipecat.services.ai_services import TTSService
+from pipecat.services.tts_service import TTSService
 from pipecat.frames.frames import AudioRawFrame, TextFrame
 
 
@@ -17,6 +17,7 @@ class KokoroTTSService(TTSService):
         self._speed = speed
         self._sample_rate = sample_rate
         self._pipeline = None
+        self._ensure_model()
 
     def _ensure_model(self):
         if self._pipeline is None:

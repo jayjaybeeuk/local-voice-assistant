@@ -2,6 +2,8 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
+    profiles:
+      - ollama
     ports:
       - "11434:11434"
     volumes:
@@ -32,6 +34,20 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml
       - models_cache:/app/models
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8765}
+        NEXT_PUBLIC_WS_TOKEN: ${NEXT_PUBLIC_WS_TOKEN:-}
+    container_name: voice-assistant-web
+    ports:
+      - "3002:3000"
+    depends_on:
+      - voice-assistant
     restart: unless-stopped
 
   n8n:

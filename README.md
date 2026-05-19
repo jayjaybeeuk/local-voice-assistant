@@ -123,74 +123,64 @@ Edit `config.yaml` to customize:
 - TTS voice and speed
 - Audio device settings
 
-## Docker (Full Stack)
+## Docker (Full Stack — one command)
 
 ```bash
 cp .env.example .env
+# Edit .env with your LLM API key (see below), then:
 docker compose up
 ```
 
-This starts Ollama and the voice assistant in **WebSocket mode** (port 8765).
-Open the web UI at http://localhost:3000 to interact via the browser.
+This starts the voice-assistant backend (port 8765) **and** the web UI (port 3001) together.  
+Open **http://localhost:3001** and tap the microphone button.
 
-### With NVIDIA GPU
+| Service          | Port | Started by default |
+|------------------|------|--------------------|
+| voice-assistant  | 8765 | ✅ always          |
+| web UI           | 3001 | ✅ always          |
+| ollama           | 11434 | ❌ opt-in via profile |
+| n8n              | 5678 | ❌ opt-in via profile |
 
-If you have an NVIDIA GPU with drivers installed, use the GPU override:
+### LLM backend options
+
+**Option A — external OpenAI-compatible API (recommended, no GPU needed)**
+
+Set these in `.env`:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=sk-...
 ```
 
-### Linux: Local microphone/speaker mode
+Then just run `docker compose up`.
 
-On Linux you can pass the host audio device into the container instead:
+**Option B — local Ollama**
+
+```bash
+docker compose --profile ollama up
+# First run: pull the model
+docker exec ollama ollama pull qwen3:8b
+```
+
+### With NVIDIA GPU (Ollama only)
+
+```bash
+docker compose --profile ollama -f docker-compose.yml -f docker-compose.gpu.yml up
+```
+
+### Linux: local microphone/speaker mode
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.linux-audio.yml up
 ```
 
-This overrides the command to `python app.py` (local audio mode) and mounts `/dev/snd`.
+This overrides the voice-assistant command to `python app.py` (local audio) and mounts `/dev/snd`.
 
-## Docker: Voice Assistant With External LLM Endpoint
-
-Use the same `voice-assistant` service for both internal and external LLM modes.
-
-### 1. Create your `.env`
+### Optional: n8n workflow tools
 
 ```bash
-cp .env.example .env
-```
-
-### 2. Choose one mode in `.env`
-
-1. Internal Ollama mode:
-   Set `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY` to empty values in `.env`.
-2. External API mode:
-   Fill `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY` with your provider values.
-
-Example external values:
-
-```bash
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-LLM_API_KEY=your_api_key_here
-```
-
-### 3. Run with Docker Compose
-
-```bash
-docker compose up --no-deps voice-assistant
-```
-
-Notes:
-
-1. `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY` override `config.yaml` at runtime.
-2. If external values are set, the assistant uses your external endpoint.
-3. If external values are empty, the assistant uses the local `config.yaml` LLM settings.
-4. If you also want tools in Docker, start n8n with:
-
-```bash
-docker compose --profile tools up -d n8n
+docker compose --profile tools up
 ```
 
 ## n8n Integration Notes
@@ -233,7 +223,16 @@ The Next.js frontend (`web/`) provides a full browser-based voice chat interface
 - **Persistent settings** — endpoint config saved to localStorage, survives refreshes
 - **Dark theme** — Inter font, indigo accents, minimal design
 
-### Running
+### Running (Docker — recommended)
+
+```bash
+cp .env.example .env   # set LLM_BASE_URL / LLM_API_KEY
+docker compose up
+```
+
+Open http://localhost:3001.
+
+### Running (local dev)
 
 ```bash
 # Terminal 1: Start the WebSocket backend
@@ -243,7 +242,7 @@ python app.py --ws
 cd web && npm install && npm run dev
 ```
 
-Open http://localhost:3000 and tap the microphone button to start a voice conversation.
+Open http://localhost:3000.
 
 ### Endpoint Configuration
 

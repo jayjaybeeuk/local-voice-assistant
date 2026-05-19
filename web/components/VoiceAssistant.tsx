@@ -17,7 +17,7 @@ export function VoiceAssistant() {
         <h1 className="text-2xl font-semibold text-gray-100">
           <span className={isActive ? "text-green-400" : "text-gray-500"}>●</span> Voice Assistant
         </h1>
-        <ConnectionStatus status={isActive ? "connected" : state === "connecting" ? "connecting" : "disconnected"} />
+        <ConnectionStatus status={isActive ? "connected" : state === "connecting" ? "connecting" : "idle"} />
       </div>
 
       {/* Visualiser */}
