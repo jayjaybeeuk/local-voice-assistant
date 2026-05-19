@@ -11,7 +11,7 @@ from typing import Any
 
 import aiohttp
 from pipecat.frames.frames import FunctionCallResultFrame
-from pipecat.services.ai_services import AIService
+from pipecat.services.ai_service import AIService
 
 logger = logging.getLogger(__name__)
 
