@@ -14,8 +14,10 @@ import yaml
 import numpy as np
 from pathlib import Path
 
+import torch
 import aiohttp
 import websockets
+from silero_vad import load_silero_vad, VADIterator
 
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -151,12 +153,18 @@ async def call_llm_api(config: dict, messages: list) -> str:
 class WebSocketAudioServer:
     """WebSocket server that bridges browser audio into the voice pipeline."""
 
+    # Silero VAD processes audio in 512-sample windows at 16 kHz
+    VAD_CHUNK_SAMPLES = 512
+    VAD_CHUNK_BYTES = VAD_CHUNK_SAMPLES * 2  # 16-bit mono
+
     def __init__(self, config, host="0.0.0.0", port=8765):
         self.config = config
         self.host = host
         self.port = port
         print("Loading STT and TTS models...", flush=True)
         self.stt, self.tts = build_stt_tts(config)
+        print("Loading VAD model...", flush=True)
+        self._vad_model = load_silero_vad()
         print("Models ready.", flush=True)
 
     async def handle_client(self, websocket, path=None):
@@ -183,18 +191,69 @@ class WebSocketAudioServer:
 
         stt, tts = self.stt, self.tts
 
+        # Per-connection VAD — shares the model, has its own state
+        vad_cfg = config.get("vad", {})
+        vad = VADIterator(
+            self._vad_model,
+            threshold=vad_cfg.get("threshold", 0.5),
+            sampling_rate=config["audio"]["sample_rate"],
+            min_silence_duration_ms=vad_cfg.get("min_silence_duration_ms", 600),
+            speech_pad_ms=100,
+        )
+
         # Per-session conversation history
         history: list = [{"role": "system", "content": config["llm"]["system_prompt"]}]
 
         audio_buffer = bytearray()
-        sample_rate = config["audio"]["sample_rate"]
-        byte_chunk = sample_rate * 2  # 1 second of 16-bit mono
+        speech_buffer = bytearray()
+        in_speech = False
 
         async def send_json(data: dict):
             try:
                 await websocket.send(json.dumps(data))
             except Exception:
                 pass
+
+        async def process_utterance(utterance_bytes: bytes):
+            try:
+                text = await stt.run_stt(utterance_bytes)
+            except Exception as exc:
+                logger.error("STT error: %s", exc)
+                await send_json({"type": "error", "message": f"STT failed: {exc}"})
+                return
+
+            if not text or not text.strip():
+                return
+
+            logger.info("STT: %s", text)
+            await send_json({"type": "transcript", "role": "user", "text": text.strip()})
+            history.append({"role": "user", "content": text.strip()})
+
+            try:
+                response = await call_llm_api(config, history)
+            except Exception as exc:
+                logger.error("LLM error [%s]: %s", type(exc).__name__, exc)
+                await send_json({"type": "error", "message": f"LLM failed: {type(exc).__name__}: {exc}"})
+                history.pop()
+                return
+
+            logger.info("LLM: %s", response)
+            history.append({"role": "assistant", "content": response})
+
+            if len(history) > 1 + HISTORY_MAX_TURNS * 2:
+                history[1:] = history[1 - HISTORY_MAX_TURNS * 2 :]
+
+            await send_json({"type": "transcript", "role": "assistant", "text": response})
+
+            try:
+                audio_data = await tts.run_tts(response)
+            except Exception as exc:
+                logger.error("TTS error: %s", exc)
+                await send_json({"type": "error", "message": f"TTS failed: {exc}"})
+                return
+
+            if audio_data:
+                await websocket.send(audio_data)
 
         try:
             async for message in websocket:
@@ -203,51 +262,28 @@ class WebSocketAudioServer:
 
                 audio_buffer.extend(message)
 
-                while len(audio_buffer) >= byte_chunk:
-                    chunk = bytes(audio_buffer[:byte_chunk])
-                    audio_buffer = audio_buffer[byte_chunk:]
+                # Drain the buffer in 512-sample (32 ms) VAD windows
+                while len(audio_buffer) >= self.VAD_CHUNK_BYTES:
+                    chunk = bytes(audio_buffer[:self.VAD_CHUNK_BYTES])
+                    audio_buffer = audio_buffer[self.VAD_CHUNK_BYTES:]
 
-                    try:
-                        text = await stt.run_stt(chunk)
-                    except Exception as exc:
-                        logger.error("STT error: %s", exc)
-                        await send_json({"type": "error", "message": f"STT failed: {exc}"})
-                        continue
+                    arr = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
+                    event = vad(torch.from_numpy(arr), return_seconds=False)
 
-                    if not text or not text.strip():
-                        continue
+                    if event and "start" in event:
+                        in_speech = True
 
-                    logger.info("STT: %s", text)
-                    await send_json({"type": "transcript", "role": "user", "text": text.strip()})
+                    if in_speech:
+                        speech_buffer.extend(chunk)
 
-                    history.append({"role": "user", "content": text.strip()})
-
-                    try:
-                        response = await call_llm_api(config, history)
-                    except Exception as exc:
-                        logger.error("LLM error [%s]: %s", type(exc).__name__, exc)
-                        await send_json({"type": "error", "message": f"LLM failed: {type(exc).__name__}: {exc}"})
-                        history.pop()
-                        continue
-
-                    logger.info("LLM: %s", response)
-                    history.append({"role": "assistant", "content": response})
-
-                    # Rolling window: keep system prompt + last HISTORY_MAX_TURNS*2 messages
-                    if len(history) > 1 + HISTORY_MAX_TURNS * 2:
-                        history[1:] = history[1 - HISTORY_MAX_TURNS * 2 :]
-
-                    await send_json({"type": "transcript", "role": "assistant", "text": response})
-
-                    try:
-                        audio_data = await tts.run_tts(response)
-                    except Exception as exc:
-                        logger.error("TTS error: %s", exc)
-                        await send_json({"type": "error", "message": f"TTS failed: {exc}"})
-                        continue
-
-                    if audio_data:
-                        await websocket.send(audio_data)
+                    if event and "end" in event:
+                        in_speech = False
+                        utterance = bytes(speech_buffer)
+                        speech_buffer = bytearray()
+                        vad.reset_states()
+                        # Ignore tiny blips (< ~200 ms)
+                        if len(utterance) >= self.VAD_CHUNK_BYTES * 6:
+                            await process_utterance(utterance)
 
         except websockets.exceptions.ConnectionClosed:
             logger.info("Web client disconnected")
