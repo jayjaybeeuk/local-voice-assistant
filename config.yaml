@@ -1,6 +1,10 @@
 llm:
+  # LM Studio (running on Mac host, accessed from Docker container):
   base_url: "http://host.docker.internal:1234/v1"
   model: "google/gemma-4-e2b"
+  # Ollama running in Docker (same compose network — no host.docker.internal needed):
+  # base_url: "http://ollama:11434/v1"
+  # model: "llama3.2:3b"  # pull with: docker compose --profile ollama up -d ollama && docker exec ollama ollama pull llama3.2:3b
   system_prompt: "You are a helpful voice assistant. Keep responses concise and conversational."
 
 stt:
