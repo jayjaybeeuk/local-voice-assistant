@@ -1,11 +1,11 @@
 llm:
-  base_url: "http://localhost:11434/v1"
-  model: "qwen3:8b"
+  base_url: "http://host.docker.internal:1234/v1"
+  model: "google/gemma-4-e2b"
   system_prompt: "You are a helpful voice assistant. Keep responses concise and conversational."
 
 stt:
   model_size: "base.en"
-  device: "auto"  # auto, cpu, or cuda
+  device: "auto" # auto, cpu, or cuda
   compute_type: "int8"
 
 tts:
@@ -21,8 +21,8 @@ tts:
   #   bm_george   - British male
   #   bm_lewis    - British male
   voice: "af_sky"
-  speed: 1.2            # 1.0 = normal, 1.2 = 20% faster
-  pitch_semitones: 0    # semitones up (+) or down (-); 0 = no shift
+  speed: 1.2 # 1.0 = normal, 1.2 = 20% faster
+  pitch_semitones: 0 # semitones up (+) or down (-); 0 = no shift
   sample_rate: 24000
 
 audio:

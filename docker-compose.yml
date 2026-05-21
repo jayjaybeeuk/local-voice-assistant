@@ -29,6 +29,8 @@ services:
       - LLM_MODEL=${LLM_MODEL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - N8N_BASE_URL=${N8N_BASE_URL:-http://n8n:5678}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8765:8765"
     volumes:
